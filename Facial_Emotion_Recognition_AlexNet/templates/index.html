@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#10124A">
+  <title>EmoFace</title>
+  <meta name="description" content="EmoFace reads the facial expression in a photo with an AlexNet deep-learning model and keeps a history of every result.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='26' fill='%2310124A'/%3E%3Cpath d='M22 40V26a4 4 0 0 1 4-4h14M60 22h14a4 4 0 0 1 4 4v14M78 60v14a4 4 0 0 1-4 4H60M40 78H26a4 4 0 0 1-4-4V60' fill='none' stroke='%23FF6FAE' stroke-width='7' stroke-linecap='round'/%3E%3Ccircle cx='40' cy='46' r='5' fill='white'/%3E%3Ccircle cx='60' cy='46' r='5' fill='white'/%3E%3Cpath d='M38 60Q50 70 62 60' fill='none' stroke='white' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preload" href="{{ url_for('static', filename='fonts/syne-latin-800-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="is-intro">
+
+  <!-- ============ 5-second intro ============ -->
+  <div class="intro" id="intro">
+    <canvas id="introCanvas" aria-hidden="true"></canvas>
+    <div class="intro-title" id="introTitle" aria-hidden="true">
+      <p class="intro-word">EmoFace</p>
+      <p class="intro-sub">Reading expressions with AlexNet</p>
+    </div>
+    <button type="button" class="intro-skip" id="introSkip">Skip intro</button>
+  </div>
+
+  <div class="site" id="site">
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <div class="frame">
+      <header class="nav">
+        <a class="brand" href="/" aria-label="EmoFace home">
+          <svg viewBox="0 0 40 40" width="34" height="34" aria-hidden="true" focusable="false">
+            <path d="M5 15V8a3 3 0 0 1 3-3h7M25 5h7a3 3 0 0 1 3 3v7M35 25v7a3 3 0 0 1-3 3h-7M15 35H8a3 3 0 0 1-3-3v-7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+            <circle cx="15" cy="18" r="2.2" fill="currentColor"/><circle cx="25" cy="18" r="2.2" fill="currentColor"/>
+            <path d="M14 25q6 5 12 0" fill="none" stroke="var(--pink)" stroke-width="3" stroke-linecap="round"/>
+          </svg>
+          <span>EmoFace</span>
+        </a>
+
+        <nav class="nav-links" aria-label="Main">
+          <button type="button" class="nav-link" id="howBtn" aria-haspopup="dialog">How it works</button>
+          <button type="button" class="nav-link" id="historyBtn" aria-haspopup="dialog" hidden>History <span class="count" id="historyCount">0</span></button>
+        </nav>
+
+        <button type="button" class="pill" id="navAction">
+          <span id="navActionLabel">Get started</span>
+          <span class="pill-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" focusable="false"><path d="M7 17 17 7M9 7h8v8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+      </header>
+
+      <main id="main">
+
+        <!-- ============ Screen 1: who is using EmoFace ============ -->
+        <section id="screenWelcome" class="hero" aria-labelledby="welcomeTitle">
+          <div class="hero-head">
+            <span class="ai-tile" aria-hidden="true"><b>AI</b></span>
+            <h1 id="welcomeTitle" tabindex="-1">Emotion Recognition</h1>
+          </div>
+
+          <div class="hero-grid">
+            <div class="hero-side">
+              <p class="lead">Take a photo and EmoFace tells you which of seven expressions your face shows, with the model's confidence in each.</p>
+
+              <div id="knownUsers" class="known" hidden>
+                <p class="known-title" id="knownTitle">Continue as</p>
+                <div class="known-list" id="knownList" role="group" aria-labelledby="knownTitle"></div>
+                <p class="form-err" id="knownErr" role="alert"></p>
+              </div>
+
+              <form id="registerForm" class="reg" novalidate>
+                <h2>Tell us about you</h2>
+
+                <div class="field">
+                  <label for="name">Name</label>
+                  <input id="name" name="name" type="text" maxlength="40" autocomplete="given-name" required aria-describedby="nameErr">
+                  <p class="field-err" id="nameErr" role="alert"></p>
+                </div>
+
+                <div class="field">
+                  <label for="age">Age</label>
+                  <input id="age" name="age" type="number" inputmode="numeric" min="5" max="120" required aria-describedby="ageErr">
+                  <p class="field-err" id="ageErr" role="alert"></p>
+                </div>
+
+                <fieldset class="field" aria-describedby="genderErr">
+                  <legend>Gender</legend>
+                  <div class="segmented">
+                    {% for g in genders %}
+                    <label class="seg">
+                      <input type="radio" name="gender" value="{{ g }}" required>
+                      <span>{{ g }}</span>
+                    </label>
+                    {% endfor %}
+                  </div>
+                  <p class="field-err" id="genderErr" role="alert"></p>
+                </fieldset>
+
+                <p class="form-err" id="formErr" role="alert"></p>
+                <button type="submit" class="pill pill-block" id="startBtn">
+                  <span>Start</span>
+                  <span class="pill-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" focusable="false"><path d="M7 17 17 7M9 7h8v8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                </button>
+              </form>
+            </div>
+
+            <!-- Decorative stage: a face cycling through the seven expressions -->
+            <div class="stage" id="heroStage">
+              <div class="stage-floor" aria-hidden="true"></div>
+
+              <div class="stage-face" aria-hidden="true">
+                <div class="stage-face-art" id="heroFace"></div>
+                <div class="scanbox">
+                  <i></i><i></i><i></i><i></i>
+                  <span class="scan-line"></span>
+                  <b class="dot d1"></b><b class="dot d2"></b><b class="dot d3"></b><b class="dot d4"></b>
+                </div>
+              </div>
+
+              <div class="fcard fcard-dark" aria-hidden="true">
+                <svg viewBox="0 0 48 48" width="44" height="44" focusable="false"><circle cx="24" cy="24" r="19" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="4"/><circle cx="24" cy="24" r="19" fill="none" stroke="var(--pink)" stroke-width="4" stroke-linecap="round" stroke-dasharray="90 120" transform="rotate(-90 24 24)"/><circle cx="24" cy="24" r="6" fill="var(--pink)"/></svg>
+                <p class="fcard-name-sm">AlexNet</p>
+                <p class="fcard-note">Deep-learning model</p>
+              </div>
+
+              <div class="fcard fcard-stat" aria-hidden="true">
+                <p class="fcard-big">7</p>
+                <p class="fcard-note-dark">Expressions recognised</p>
+                <div class="avatars" id="heroAvatars"></div>
+              </div>
+
+              <div class="fcard fcard-read" aria-hidden="true">
+                <p class="fcard-title">Example reading</p>
+                <p class="fcard-name" id="heroName">Happy</p>
+                <ul class="mini-bars" id="heroBars"></ul>
+              </div>
+
+              <div class="strip" aria-hidden="true">
+                <div class="strip-faces" id="heroStrip"></div>
+                <div class="strip-bar">
+                  <span class="strip-label">Reading <b id="heroReading">happy</b></span>
+                  <span class="strip-track"><i id="heroProg"></i></span>
+                </div>
+              </div>
+
+              <button type="button" class="stage-pause" id="stagePause" aria-pressed="false">Pause animation</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ Screen 2: workspace ============ -->
+        <section id="screenApp" class="app" hidden aria-labelledby="greetingTitle">
+          <div class="greeting">
+            <div>
+              <h1 id="greetingTitle" tabindex="-1"></h1>
+              <p class="lead" id="greetingSub"></p>
+            </div>
+            <ol class="steps" aria-label="Progress">
+              <li data-step="capture" aria-current="step">Capture</li>
+              <li data-step="confirm">Confirm</li>
+              <li data-step="result">Result</li>
+            </ol>
+          </div>
+
+          <div id="notice" class="notice" role="status" hidden></div>
+
+          <div class="workspace">
+            <!-- Camera side -->
+            <section class="panel" id="cameraPanel" aria-labelledby="camTitle">
+              <div class="panel-head"><h2 id="camTitle" tabindex="-1">Camera</h2><span class="live-dot" id="liveDot" hidden>Live</span></div>
+              <div class="stage-cam">
+                <video id="video" playsinline muted autoplay aria-label="Live camera preview"></video>
+                <div class="guide" id="guide" hidden aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+                <div class="cam-msg" id="camMsg">
+                  <svg viewBox="0 0 24 24" width="32" height="32" aria-hidden="true" focusable="false"><path d="M4 8h3l2-3h6l2 3h3v11H4zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+                  <p id="camMsgText">Starting the camera…</p>
+                  <button type="button" class="btn btn-light" id="camRetry" hidden>Try again</button>
+                </div>
+              </div>
+              <div class="panel-actions">
+                <button type="button" class="btn btn-primary" id="takeBtn" disabled>
+                  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg>
+                  Click to take photo
+                </button>
+                <label class="btn btn-ghost" for="uploadInput">
+                  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12 16V5m0 0-4 4m4-4 4 4M5 19h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  Upload a photo
+                </label>
+                <input id="uploadInput" class="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp">
+              </div>
+            </section>
+
+            <!-- Analysis side -->
+            <section class="panel" id="analysisPanel" data-state="empty" aria-labelledby="anaTitle">
+              <div class="panel-head"><h2 id="anaTitle">Image to analyse</h2></div>
+
+              <div class="stage-empty" data-show="empty">
+                <div class="empty-art" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="40" height="40" focusable="false"><rect x="3" y="4" width="18" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="9" cy="10" r="1.8" fill="currentColor"/><path d="m4 17 5-4.5 3.5 3 3-2.5L20 17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+                </div>
+                <p class="empty-title">Your photo appears here</p>
+                <p class="empty-sub">Take a photo with the camera, or upload one.</p>
+              </div>
+
+              <div class="photo-wrap" data-show="preview analysing result" hidden>
+                <div class="photo" id="photo">
+                  <img id="photoImg" alt="Photo to analyse">
+                  <div class="face-box" id="faceBox" hidden></div>
+                  <div class="scan" id="scan" hidden aria-hidden="true"></div>
+                </div>
+              </div>
+
+              <div class="below" data-show="preview analysing" hidden>
+                <p class="form-err" id="analyseErr" role="alert"></p>
+                <p class="analysing" id="analysing" role="status" hidden><span class="spinner" aria-hidden="true"></span>Detecting emotion…</p>
+                <div class="panel-actions" id="confirmActions">
+                  <button type="button" class="btn btn-primary" id="confirmBtn">Confirm photo</button>
+                  <button type="button" class="btn btn-ghost" id="retakeBtn">Retake</button>
+                </div>
+              </div>
+
+              <div class="result" id="result" data-show="result" hidden>
+                <div class="result-top">
+                  <div id="resultFace" class="result-face"></div>
+                  <div>
+                    <p class="result-label">Most likely expression</p>
+                    <p class="result-emotion" id="resultEmotion"></p>
+                    <p class="result-conf" id="resultConf"></p>
+                  </div>
+                </div>
+                <p class="uncertain" id="uncertain" role="note" hidden>The model is not sure about this one. Face the camera in even light and retake for a clearer reading.</p>
+                <ul class="bars" id="bars" aria-label="Probability of each expression"></ul>
+                <p class="caveat">This is the expression the model sees on the face. It is not a measure of how you actually feel.</p>
+                <div class="panel-actions">
+                  <button type="button" class="btn btn-primary" id="againBtn">Take another photo</button>
+                  <button type="button" class="btn btn-ghost" id="openHistoryBtn">View history</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- ============ How it works ============ -->
+  <dialog id="howDialog" class="modal" aria-labelledby="howTitle">
+    <div class="modal-head">
+      <h2 id="howTitle">How EmoFace works</h2>
+      <button type="button" class="icon-btn" id="closeHow" aria-label="Close">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <ol class="how-list">
+      <li><b>Tell us about you.</b> Your name, age and gender label the history saved on this computer.</li>
+      <li><b>Take or upload a photo.</b> The camera is on one side and the image to analyse appears on the other.</li>
+      <li><b>Confirm or retake.</b> Retake goes back to the camera. Confirm sends the photo to the model.</li>
+      <li><b>Read the result.</b> EmoFace finds the face, AlexNet scores seven expressions, and the result is saved to your history.</li>
+    </ol>
+    <p class="how-note">AlexNet is trained on the FER-2013 dataset. It names the expression on a face. It cannot tell what a person actually feels.</p>
+  </dialog>
+
+  <!-- ============ History drawer ============ -->
+  <dialog id="historyDialog" class="drawer" aria-labelledby="historyTitle">
+    <div class="drawer-head">
+      <h2 id="historyTitle">Your history</h2>
+      <button type="button" class="icon-btn" id="closeHistory" aria-label="Close history">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <div id="historySummary"></div>
+      <ul class="history-list" id="historyList"></ul>
+      <div class="history-empty" id="historyEmpty" hidden>
+        <p class="empty-title">No detections yet</p>
+        <p class="empty-sub">Confirm a photo and its result is saved here automatically.</p>
+      </div>
+    </div>
+    <div class="drawer-foot">
+      <button type="button" class="btn btn-danger-quiet" id="clearAll" hidden>Clear all history</button>
+    </div>
+  </dialog>
+
+  <script src="{{ url_for('static', filename='js/intro.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

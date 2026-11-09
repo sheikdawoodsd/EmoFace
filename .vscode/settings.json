@@ -1,0 +1,4 @@
+{
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "python.defaultInterpreterPath": "${workspaceFolder}\\Facial_Emotion_Recognition_AlexNet\\.venv\\Scripts\\python.exe"
+}
