@@ -4,3 +4,4 @@ torchvision>=0.17
 opencv-python>=4.9,<5
 numpy>=1.26
 pillow>=10.0
+gunicorn
