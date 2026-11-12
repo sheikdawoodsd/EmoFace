@@ -79,8 +79,19 @@ def init_db() -> None:
         "CREATE INDEX IF NOT EXISTS idx_history_user ON history(user_id, id DESC)",
         "CREATE INDEX IF NOT EXISTS idx_users_device ON users(device_token)",
     ]
+    # Older databases (before device sign-in) lack these columns: add them before indexing.
+    upgrades = [("users", "device_token", "TEXT"), ("history", "image", blob), ("history", "image_file", "TEXT")]
     with _connect() as conn:
-        for s in stmts:
+        for s in stmts[:3]:
+            _exec(conn, s)
+        for table, col, typ in upgrades:
+            if PG:
+                _exec(conn, f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {typ}")
+            else:
+                have = {r["name"] for r in _exec(conn, f"PRAGMA table_info({table})").fetchall()}
+                if col not in have:
+                    _exec(conn, f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+        for s in stmts[3:]:
             _exec(conn, s)
         if PG:  # keep the tables private: only this server (not the public Supabase API key) may read them
             for t in ("users", "devices", "history"):
@@ -152,8 +163,8 @@ def add_history(user_id: int, result: Dict, image: bytes) -> Dict:
     with _connect() as conn:
         item_id = _insert(
             conn,
-            "INSERT INTO history (user_id, emotion, confidence, probabilities, image, demo, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO history (user_id, emotion, confidence, probabilities, image, image_file, demo, created_at)"
+            " VALUES (?, ?, ?, ?, ?, '', ?, ?)",
             (user_id, result["emotion"], result["confidence"], json.dumps(result["probabilities"]),
              psycopg2.Binary(image) if PG else image, int(result.get("demo", False)), _now()),
         )
@@ -187,10 +198,17 @@ def list_history(user_id: int) -> List[Dict]:
 
 def get_photo(user_id: int, item_id: int) -> Optional[bytes]:
     with _connect() as conn:
-        row = _exec(conn, "SELECT image FROM history WHERE id = ? AND user_id = ?", (item_id, user_id)).fetchone()
-        if not row or row["image"] is None:
+        row = _exec(conn, "SELECT image, image_file FROM history WHERE id = ? AND user_id = ?", (item_id, user_id)).fetchone()
+        if not row:
             return None
-        return bytes(row["image"])
+        if row["image"] is not None:
+            return bytes(row["image"])
+        legacy = row["image_file"]  # photo saved by an older version as a file
+        if legacy:
+            f = Path(__file__).resolve().parent.parent / "static" / "captures" / os.path.basename(legacy)
+            if f.is_file():
+                return f.read_bytes()
+        return None
 
 
 def delete_history(user_id: int, item_id: Optional[int] = None) -> None:
