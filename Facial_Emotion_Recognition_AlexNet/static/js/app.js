@@ -51,7 +51,7 @@
   const el = {
     welcome: $("#screenWelcome"), app: $("#screenApp"), navAction: $("#navAction"), navLabel: $("#navActionLabel"), howBtn: $("#howBtn"), howDialog: $("#howDialog"), closeHow: $("#closeHow"),
     form: $("#registerForm"), formErr: $("#formErr"), startBtn: $("#startBtn"),
-    knownBox: $("#knownUsers"), knownList: $("#knownList"), knownErr: $("#knownErr"),
+    knownBox: $("#knownUsers"), knownList: $("#knownList"),
     greetTitle: $("#greetingTitle"), greetSub: $("#greetingSub"), steps: $$(".steps li"), notice: $("#notice"),
     camPanel: $("#cameraPanel"), video: $("#video"), guide: $("#guide"), liveDot: $("#liveDot"),
     camMsg: $("#camMsg"), camMsgText: $("#camMsgText"), camRetry: $("#camRetry"),
@@ -155,7 +155,6 @@
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, age, gender }),
       });
-      rememberUser(created.id);
       enterApp(created, false);
     } catch (err) {
       el.formErr.textContent = err.message;
@@ -164,41 +163,24 @@
     }
   });
 
-  function rememberUser(id) {
-    const ids = store.read("emoface.users", []).filter((x) => x !== id);
-    ids.unshift(id);
-    store.write("emoface.users", ids.slice(0, 5));
-    store.write("emoface.active", id);
+  function renderKnownUsers(profiles) {
+    if (!profiles.length) { el.knownBox.hidden = true; return; }
+    el.knownList.innerHTML = profiles.map((u, i) =>
+      `<button type="button" class="known-chip" data-id="${u.id}">${faceSVG(EMOTIONS[(u.id + i) % EMOTIONS.length])}${esc(u.name)}</button>`).join("");
+    el.knownBox.hidden = false;
+    $$(".known-chip", el.knownList).forEach((btn) => btn.addEventListener("click", async () => {
+      try {
+        const s = await api("/api/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ switch_to: Number(btn.dataset.id) }) });
+        if (s.user) enterApp(s.user, true);
+      } catch { /* stay on the sign-in form */ }
+    }));
   }
 
   async function loadKnownUsers() {
-    const ids = store.read("emoface.users", []);
-    const found = (await Promise.all(ids.map((id) => api(`/api/users/${id}`).catch(() => null)))).filter(Boolean);
-    if (!found.length) { el.knownBox.hidden = true; return; }
-    el.knownList.innerHTML = found.map((u, i) =>
-      `<div class="known-account"><button type="button" class="known-chip" data-id="${u.id}">${faceSVG(EMOTIONS[(u.id + i) % EMOTIONS.length])}${esc(u.name)}</button><button type="button" class="btn btn-danger-quiet known-delete" data-delete-id="${u.id}" aria-label="Delete account for ${esc(u.name)}">Delete account</button></div>`).join("");
-    el.knownBox.hidden = false;
-    $$(".known-chip", el.knownList).forEach((btn) => btn.addEventListener("click", () => {
-      const u = found.find((x) => String(x.id) === btn.dataset.id);
-      rememberUser(u.id);
-      enterApp(u, true);
-    }));
-    $$(".known-delete", el.knownList).forEach((btn) => btn.addEventListener("click", async () => {
-      const account = found.find((x) => String(x.id) === btn.dataset.deleteId);
-      if (!account || !window.confirm(`Delete ${account.name}'s account and all saved history? This cannot be undone.`)) return;
-      btn.disabled = true;
-      el.knownErr.textContent = "";
-      try {
-        await api(`/api/users/${account.id}`, { method: "DELETE" });
-        const ids = store.read("emoface.users", []).filter((id) => id !== account.id);
-        store.write("emoface.users", ids);
-        if (store.read("emoface.active", null) === account.id) store.write("emoface.active", null);
-        await loadKnownUsers();
-      } catch (err) {
-        btn.disabled = false;
-        el.knownErr.textContent = err.message;
-      }
-    }));
+    try {
+      const s = await api("/api/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      renderKnownUsers(s.profiles || []);
+    } catch { el.knownBox.hidden = true; }
   }
 
   /* ---------- Greeting + entering the workspace ---------- */
@@ -244,7 +226,7 @@
     stopCamera();
     resetAnalysis();
     user = null;
-    store.write("emoface.active", null);
+    api("/api/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ switch_to: null }) }).catch(() => {});
     el.app.hidden = true;
     setSignedIn(false);
     el.welcome.hidden = false;
@@ -520,10 +502,10 @@
 
   /* ---------- Boot ---------- */
   (async function boot() {
-    const activeId = store.read("emoface.active", null);
-    if (activeId) {
-      try { enterApp(await api(`/api/users/${activeId}`), true); return; } catch { /* fall through to sign-in */ }
-    }
-    loadKnownUsers();
+    try {
+      const s = await api("/api/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      if (s.user) { enterApp(s.user, true); return; }   // same device: straight in, no sign-in
+      renderKnownUsers(s.profiles || []);
+    } catch { /* offline: show the sign-in form */ }
   })();
 })();

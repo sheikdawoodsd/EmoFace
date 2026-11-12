@@ -11,7 +11,6 @@ EmoFace is a website that reads the facial expression in a photo (angry, disgust
    - Confirm detects the face, predicts the expression and shows all seven probabilities.
 4. Every confirmed result is saved (photo, expression, confidence, time) and appears under **History**, where single entries or everything can be deleted.
 5. Photos can also be uploaded instead of using the camera.
-6. **Switch user** returns to the saved profiles; each profile has a **Delete account** option that removes the profile, its history, and its saved photos.
 
 ## Folder layout
 ```
@@ -39,14 +38,16 @@ History is stored in `instance/emotion_history.db`; photos in `static/captures/`
 
 The test-set accuracy, precision, recall, F1 and confusion matrix printed by the notebook are your real results. Quote those in your report. Set `PRETRAINED = False` and run again to compare against training from scratch.
 
-### Why the camera used to say "neutral" (and what changed)
-Uploads looked fine but the webcam kept answering "neutral". FER-2013 is 48x48 grayscale, while a webcam face is large, sharp and lit differently, so the model sees something it was never trained on and falls back to its safest class. The code now fixes this in four ways:
-- the face is shrunk to 48x48 and enlarged again, exactly like the training data (the website and the notebook share the same steps);
-- contrast is auto-stretched in both training and the website (`autocontrast` is stored in the checkpoint);
-- training adds webcam-style blur, brightness and noise, and the prediction averages the face with its mirror image;
-- the notebook measures per-class bias on validation data and saves a `logit_bias` correction in the checkpoint.
+### Camera accuracy (what was improved)
+A webcam face is large, sharp and lit differently from the 48x48 FER-2013 training faces, and subtle expressions are easy to read as "neutral". The included `models/alexnet_emotion.pth` is the FER-2013 AlexNet, then fine-tuned on about 1,200 labelled real face photos with webcam-style blur, exposure and noise, while staying close to the original model so it keeps what it learned from FER-2013. On people the model had never seen, accuracy rose from about 60% to about 77% (surprise and neutral improved most; **disgust and fear have very few examples and stay the weakest**, so treat them with care).
 
-**Important:** these fixes only reach full strength with a model trained by the *updated* notebook. A model from the old notebook still runs, but without autocontrast or calibration. Retrain once in Colab (about 20-30 minutes on a T4) and replace `models/alexnet_emotion.pth`. Low-confidence results (under 45%) are marked "Not sure" on screen.
+At prediction time EmoFace also:
+- finds faces more reliably in soft, backlit webcam frames (a stricter detector missed about half of simulated webcam frames; the tolerant one found all of them);
+- averages a tight and a slightly wider face crop, each mirrored;
+- applies the same auto-contrast and 48x48 preparation as in training, plus the class-bias values stored in the checkpoint;
+- marks results under 45% confidence as "Not sure" instead of presenting them as certain.
+
+These are measured on a small public sample of posed photos, not on your own webcam, so real-world accuracy will differ. Act out the expression clearly (a real smile, raised eyebrows) with the face well lit and the light in front of you, not behind.
 
 ## Step 2: Run the website in VS Code (Windows)
 Open the folder in VS Code, open a terminal (Ctrl+`), then:
@@ -71,3 +72,15 @@ python app.py
 - The page fonts (Syne, Figtree) are bundled in `static/fonts`, so the site works offline.
 - If the Kaggle download cell fails, open the FER-2013 dataset page on Kaggle (by *msambare*) while signed in, accept its terms once, and run the cell again. Any FER-2013 copy with `train` and `test` folders works.
 - Face detection uses the Haar cascade bundled with `opencv-python` 4.x (the requirements pin `<5`).
+
+
+## Sign-in per device and permanent storage
+
+* The first time a browser opens the site it is asked for name, age and gender. After that the same browser goes straight into the app (the intro still plays). A different browser or phone is asked to sign in and sees none of the other device's people or photos.
+* Everything (people, results and the photos) is stored in the database, not on the web server's disk.
+  * Local: a SQLite file in `instance/`.
+  * Hosted (Render): set the environment variable `DATABASE_URL` to a Postgres address (Supabase: Project > Connect > Session pooler). Without it Render's free disk is wiped on every restart.
+
+## Train on Hugging Face photos
+
+Open `notebooks/train_on_huggingface_colab.ipynb` in Colab (T4 GPU), run all cells, upload your current `alexnet_emotion.pth` when asked, then replace the file in `models/` with the downloaded one.
