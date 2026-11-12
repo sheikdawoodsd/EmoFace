@@ -184,12 +184,10 @@ h2 { font-size: 1.375rem; }
 .field[data-invalid="true"] .seg span { border-color: var(--danger); }
 
 .known-title { font-weight: 700; font-size: .9375rem; margin-bottom: var(--s2); }
-.known-list { display: grid; gap: var(--s3); }
-.known-account { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); }
+.known-list { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .known-chip { display: inline-flex; align-items: center; gap: var(--s2); min-height: 48px; padding: 0 var(--s4) 0 var(--s2); border: 1.5px solid var(--line); background: #fff; border-radius: 999px; font-weight: 700; cursor: pointer; transition: border-color .15s, transform .2s var(--ease); }
 .known-chip:hover { border-color: var(--blue); transform: translateY(-2px); }
 .known-chip .face { width: 32px; height: 32px; }
-.known-delete { min-height: 42px; padding: 0 var(--s3); font-size: .875rem; }
 
 /* ---------- Stage: face, scan box, floating cards ---------- */
 .stage { position: relative; min-height: 540px; border-radius: var(--r-panel); overflow: hidden; isolation: isolate; background: linear-gradient(180deg, #11175F 0%, #080B38 100%); color: #fff; }

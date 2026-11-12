@@ -25,20 +25,45 @@ def _load_cascade() -> cv2.CascadeClassifier:
     )
 
 
-_cascade: Optional[cv2.CascadeClassifier] = None
+_cascades: Optional[list] = None
+
+
+def _load_all() -> list:
+    """The main detector first, then OpenCV's second face detector (alt2) as a backup."""
+    cascades = [_load_cascade()]
+    if hasattr(cv2, "data"):
+        alt = Path(cv2.data.haarcascades) / "haarcascade_frontalface_alt2.xml"
+        if alt.is_file():
+            c = cv2.CascadeClassifier(str(alt))
+            if not c.empty():
+                cascades.append(c)
+    return cascades
 
 
 def detect_largest_face(bgr: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
-    """Return (x, y, w, h) of the largest face, or None when no face is found."""
-    global _cascade
-    if _cascade is None:
-        _cascade = _load_cascade()
+    """Return (x, y, w, h) of the largest face, or None when no face is found.
+
+    Webcam frames are often backlit, soft or noisy, and one strict pass misses
+    many of them. The passes below go from strict to tolerant and stop at the
+    first one that finds a face, so a clearly visible face is detected exactly
+    as before.
+    """
+    global _cascades
+    if _cascades is None:
+        _cascades = _load_all()
+    main = _cascades[0]
+    alt = _cascades[1] if len(_cascades) > 1 else main
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    gray = cv2.equalizeHist(gray)
-    faces = _cascade.detectMultiScale(
-        gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
+    min_side = max(40, int(min(gray.shape[:2]) * 0.12))
+    views = (
+        cv2.equalizeHist(gray),
+        cv2.createCLAHE(2.0, (8, 8)).apply(gray),
+        gray,
     )
-    if len(faces) == 0:
-        return None
-    x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
-    return int(x), int(y), int(w), int(h)
+    for cascade, neighbours in ((main, 5), (alt, 4), (main, 3), (alt, 3)):
+        for view in views:
+            faces = cascade.detectMultiScale(view, 1.08, neighbours, minSize=(min_side, min_side))
+            if len(faces):
+                x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+                return int(x), int(y), int(w), int(h)
+    return None

@@ -40,6 +40,9 @@ class EmotionPredictor:
         self.input_size = INPUT_SIZE
         self.autocontrast = False
         self.logit_bias: Optional[np.ndarray] = None
+        # Extra face crops (as a fraction of the face box) averaged at prediction
+        # time. Older checkpoints do not list any, so they use the tight crop only.
+        self.tta_margins = (0.0,)
         self._load()
 
     # ------------------------------------------------------------------ load
@@ -50,7 +53,9 @@ class EmotionPredictor:
         from .model import build_alexnet
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        ckpt = torch.load(self.model_path, map_location=self.device, weights_only=False)
+        # mmap keeps the weights on disk and pages them in as needed, so the
+        # 228 MB file is not copied into memory a second time (matters on small hosts).
+        ckpt = torch.load(self.model_path, map_location="cpu", weights_only=False, mmap=True)
         is_dict = isinstance(ckpt, dict)
         state = ckpt["state_dict"] if is_dict and "state_dict" in ckpt else ckpt
         if is_dict:
@@ -60,10 +65,14 @@ class EmotionPredictor:
             bias = ckpt.get("logit_bias")
             if bias is not None and len(bias) == len(self.classes):
                 self.logit_bias = np.asarray(bias, dtype=np.float32)
-        model = build_alexnet(len(self.classes), pretrained=False)
-        model.load_state_dict(state)
-        model.to(self.device).eval()
-        self.model = model
+            margins = ckpt.get("tta_margins")
+            if margins:
+                self.tta_margins = tuple(float(m) for m in margins)
+        with torch.device("meta"):  # build the network without allocating its weights
+            net = build_alexnet(len(self.classes), pretrained=False)
+        net.load_state_dict(state, assign=True)
+        net.to(self.device).eval()
+        self.model = net
 
     @property
     def status(self) -> Dict:
@@ -114,10 +123,17 @@ class EmotionPredictor:
             import torch
 
             with torch.no_grad():
-                inp = self._preprocess(face).to(self.device)
-                # Average the face and its mirror image (a smile is still a smile
-                # flipped), then apply the notebook's class-bias calibration.
-                batch = torch.cat([inp, torch.flip(inp, dims=[3])], dim=0)
+                # Average several views of the same face: a slightly wider crop,
+                # and each crop mirrored (a smile is still a smile flipped). This
+                # steadies the result on webcam frames. Then apply the stored
+                # class-bias calibration.
+                views = []
+                for m in self.tta_margins:
+                    mx, my = int(bw * m), int(bh * m)
+                    crop = bgr[max(0, y - my) : min(h, y + bh + my), max(0, x - mx) : min(w, x + bw + mx)]
+                    inp = self._preprocess(crop)
+                    views += [inp, torch.flip(inp, dims=[3])]
+                batch = torch.cat(views, dim=0).to(self.device)
                 logits = self.model(batch).mean(dim=0)
                 if self.logit_bias is not None:
                     logits = logits + torch.from_numpy(self.logit_bias).to(self.device)
